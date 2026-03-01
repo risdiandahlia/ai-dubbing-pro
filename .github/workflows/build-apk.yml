@@ -3,13 +3,11 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
     - name: Checkout repository
@@ -18,12 +16,12 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.9'
     
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq \
           git \
           zip \
           unzip \
@@ -38,35 +36,38 @@ jobs:
           liblzma-dev \
           cmake \
           libffi-dev \
-          libssl-dev
+          libssl-dev \
+          automake
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install buildozer cython
+        pip install buildozer==1.5.0 cython==0.29.36
     
-    - name: Cache buildozer dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.buildozer
-          ~/.gradle
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          ${{ runner.os }}-buildozer-
-    
-    - name: Build APK with Buildozer
+    - name: Create buildozer.spec if not exists
       run: |
-        buildozer android debug
+        if [ ! -f buildozer.spec ]; then
+          buildozer init
+        fi
+    
+    - name: Build APK
+      run: |
+        buildozer android debug 2>&1 | tee build.log
       env:
         BUILDOZER_WARN_ON_ROOT: 0
+      timeout-minutes: 45
     
-    - name: Upload APK as artifact
+    - name: Check APK exists
+      run: |
+        ls -la bin/ || echo "No bin directory"
+        find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+    
+    - name: Upload APK
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: dubbing-pro-apk
-        path: bin/*.apk
+        path: |
+          bin/*.apk
+          build.log
         retention-days: 30
-    
-    - name: List APK files
-      run: ls -la bin/
