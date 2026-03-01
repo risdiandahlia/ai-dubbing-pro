@@ -8,84 +8,51 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    container: kivy/buildozer:latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
     
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-    
-    - name: Install dependencies
+    - name: Check files
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev liblzma-dev cmake libffi-dev libssl-dev automake
-        pip install buildozer==1.5.0 cython==0.29.36
-    
-    - name: Check files before build
-      run: |
-        echo "=== Files in repo ==="
         ls -la
-        echo "=== buildozer.spec ==="
         cat buildozer.spec
+        cat main.py | head -20
     
-    - name: Build APK
+    - name: Build APK with Docker
       run: |
+        # Build using pre-configured environment
         buildozer android debug 2>&1 | tee build.log
-        echo "=== Build finished with exit code: ${PIPESTATUS[0]} ==="
       env:
         BUILDOZER_WARN_ON_ROOT: 0
       timeout-minutes: 45
     
-    - name: Debug - Find all files
+    - name: Find APK
       run: |
-        echo "=== Current directory ==="
-        pwd
-        ls -la
+        echo "=== Find all APK files ==="
+        find / -name "*.apk" -type f 2>/dev/null | head -10
         
-        echo "=== Find bin directory ==="
-        find . -type d -name "bin" 2>/dev/null
+        echo "=== Check bin directory ==="
+        ls -la bin/ 2>/dev/null || echo "No bin"
         
-        echo "=== Find any APK ==="
-        find . -name "*.apk" -type f 2>/dev/null
+        echo "=== Check .buildozer ==="
+        find .buildozer -name "*.apk" 2>/dev/null | head -5
         
-        echo "=== Find .aab (Android App Bundle) ==="
-        find . -name "*.aab" -type f 2>/dev/null
-        
-        echo "=== Check .buildozer directory ==="
-        ls -la .buildozer/android/app/build/outputs/apk/debug/ 2>/dev/null || echo "Not found"
-        
-        echo "=== Check alternative locations ==="
-        ls -la .buildozer/android/platform/build-*/dists/*/build/outputs/apk/debug/ 2>/dev/null || echo "Not found"
+        # Copy to accessible location
+        mkdir -p output
+        find . -name "*.apk" -exec cp {} output/ \; 2>/dev/null || true
+        ls -la output/
     
-    - name: Upload APK from any location
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: dubbing-pro-apk
         path: |
+          output/*.apk
+          bin/*.apk
           **/*.apk
-          **/*.aab
           build.log
         retention-days: 30
-    
-    - name: Create Release with APK
-      uses: softprops/action-gh-release@v1
-      if: always()
-      with:
-        files: |
-          **/*.apk
-          **/*.aab
-        tag_name: v${{ github.run_number }}
-        name: AI Dubbing Pro v${{ github.run_number }}
-        body: |
-          ## AI Dubbing Pro v${{ github.run_number }}
-          
-          Build status: ${{ job.status }}
-          
-          Download APK/AAB dari artifacts.
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
+        if-no-files-found: warn
