@@ -13,42 +13,39 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     
+    - name: Debug - List all files
+      run: |
+        echo "=== All files in repo ==="
+        ls -la
+        echo ""
+        echo "=== Content of buildozer.spec ==="
+        cat buildozer.spec
+        echo ""
+        echo "=== File size ==="
+        wc -l buildozer.spec
+    
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
     
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq \
-          git \
-          zip \
-          unzip \
-          openjdk-17-jdk \
-          python3-pip \
-          autoconf \
-          libtool \
-          pkg-config \
-          zlib1g-dev \
-          libncurses5-dev \
-          libncursesw5-dev \
-          liblzma-dev \
-          cmake \
-          libffi-dev \
-          libssl-dev \
-          automake
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
+        sudo apt-get update
+        sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev liblzma-dev cmake libffi-dev libssl-dev automake
         pip install buildozer==1.5.0 cython==0.29.36
     
-    - name: Create buildozer.spec if not exists
+    - name: Validate buildozer.spec
       run: |
-        if [ ! -f buildozer.spec ]; then
-          buildozer init
-        fi
+        echo "=== Validating buildozer.spec ==="
+        python3 -c "
+import configparser
+config = configparser.ConfigParser()
+config.read('buildozer.spec')
+print('Sections found:', config.sections())
+for section in config.sections():
+    print(f'  [{section}]')
+"
     
     - name: Build APK
       run: |
@@ -57,17 +54,35 @@ jobs:
         BUILDOZER_WARN_ON_ROOT: 0
       timeout-minutes: 45
     
-    - name: Check APK exists
+    - name: Check APK
       run: |
-        ls -la bin/ || echo "No bin directory"
+        echo "=== Finding APK ==="
         find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+        ls -la bin/ 2>/dev/null || echo "No bin folder"
     
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      if: always()
+    - name: Upload to Releases
+      uses: softprops/action-gh-release@v1
+      if: success()
       with:
-        name: dubbing-pro-apk
+        files: bin/*.apk
+        tag_name: v${{ github.run_number }}
+        name: 🎬 AI Dubbing Pro v${{ github.run_number }}
+        body: |
+          ## AI Dubbing Pro v${{ github.run_number }}
+          
+          ✅ Build sukses!
+          
+          Download APK ⬇️
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+    
+    - name: Upload logs on failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: build-logs
         path: |
-          bin/*.apk
           build.log
-        retention-days: 30
+          buildozer.spec
+        retention-days: 7
