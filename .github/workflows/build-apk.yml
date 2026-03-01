@@ -8,51 +8,34 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: kivy/buildozer:latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
     
-    - name: Check files
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+      
+    - name: Install dependencies
       run: |
-        ls -la
-        cat buildozer.spec
-        cat main.py | head -20
+        sudo apt-get update
+        sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev liblzma-dev cmake libffi-dev libssl-dev automake
+        pip install buildozer==1.5.0 cython==0.29.36
     
-    - name: Build APK with Docker
+    - name: Setup SDK
       run: |
-        # Build using pre-configured environment
-        buildozer android debug 2>&1 | tee build.log
+        sdkmanager "platforms;android-33" "build-tools;33.0.0" "ndk;25.2.9519653"
+        yes | sdkmanager --licenses
+    
+    - name: Build
+      run: buildozer android debug
       env:
+        ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         BUILDOZER_WARN_ON_ROOT: 0
       timeout-minutes: 45
     
-    - name: Find APK
-      run: |
-        echo "=== Find all APK files ==="
-        find / -name "*.apk" -type f 2>/dev/null | head -10
-        
-        echo "=== Check bin directory ==="
-        ls -la bin/ 2>/dev/null || echo "No bin"
-        
-        echo "=== Check .buildozer ==="
-        find .buildozer -name "*.apk" 2>/dev/null | head -5
-        
-        # Copy to accessible location
-        mkdir -p output
-        find . -name "*.apk" -exec cp {} output/ \; 2>/dev/null || true
-        ls -la output/
-    
-    - name: Upload APK
+    - name: Upload
       uses: actions/upload-artifact@v4
-      if: always()
       with:
-        name: dubbing-pro-apk
-        path: |
-          output/*.apk
-          bin/*.apk
-          **/*.apk
-          build.log
-        retention-days: 30
-        if-no-files-found: warn
+        name: apk
+        path: bin/*.apk
