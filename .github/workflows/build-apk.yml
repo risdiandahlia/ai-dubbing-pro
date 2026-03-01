@@ -18,33 +18,73 @@ jobs:
       with:
         python-version: '3.9'
     
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev liblzma-dev cmake libffi-dev libssl-dev automake
+    
+    - name: Install buildozer
+      run: |
+        pip install buildozer==1.5.0 cython==0.29.36
+    
+    - name: Setup Android SDK and accept licenses
+      run: |
+        # Create android sdk directory
+        mkdir -p ~/.buildozer/android/platform/android-sdk
+        
+        # Download command line tools
+        cd ~/.buildozer/android/platform/
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -q commandlinetools-linux-9477386_latest.zip
+        mkdir -p android-sdk/cmdline-tools
+        mv cmdline-tools android-sdk/cmdline-tools/latest
+        
+        # Set environment
+        export ANDROID_SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+        export PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+        
+        # Accept all licenses
+        yes | sdkmanager --licenses || true
+        
+        # Install required packages
+        sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "ndk;25.2.9519653"
+        
+        echo "Android SDK setup complete"
+    
     - name: Check files
       run: |
         ls -la
         cat buildozer.spec
     
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev liblzma-dev cmake libffi-dev libssl-dev automake
-        pip install buildozer==1.5.0 cython==0.29.36
-    
     - name: Build APK
-      run: buildozer android debug
+      run: |
+        # Set environment for buildozer
+        export ANDROID_SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+        export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/25.2.9519653"
+        
+        buildozer android debug 2>&1 | tee build.log
       env:
         BUILDOZER_WARN_ON_ROOT: 0
       timeout-minutes: 45
     
-    - name: Find APK
-      run: find . -name "*.apk" -type f
+    - name: Debug - Check results
+      run: |
+        echo "=== Build log last 50 lines ==="
+        tail -50 build.log || echo "No build.log"
+        echo "=== Find APK ==="
+        find . -name "*.apk" -type f 2>/dev/null || echo "No APK"
+        ls -la bin/ 2>/dev/null || echo "No bin"
     
-    - name: Upload to Releases
-      uses: softprops/action-gh-release@v1
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
       if: success()
       with:
-        files: bin/*.apk
-        tag_name: v${{ github.run_number }}
-        name: AI Dubbing Pro v${{ github.run_number }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
+        name: dubbing-pro-apk
+        path: bin/*.apk
+    
+    - name: Upload logs on failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: build-logs
+        path: build.log
